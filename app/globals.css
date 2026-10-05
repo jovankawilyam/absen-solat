@@ -1,0 +1,88 @@
+@import "tailwindcss";
+
+@theme {
+  --font-serif: "Fraunces", "Lora", Georgia, "Times New Roman", serif;
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  --color-kertas: #faf7f0;
+  --color-kertas-gelap: #f1ebe0;
+  --color-tinta: #1c1a15;
+  --color-tinta-muda: #6b655a;
+  --color-garis: #e3d9c4;
+  --color-malam: #12241c;
+  --color-masjid: #1d3b2e;
+  --color-masjid-tua: #142a21;
+  --color-sambung: #b4532a;
+}
+
+:root {
+  --background: #faf7f0;
+  --foreground: #1c1a15;
+}
+
+html {
+  background: #e9e1d0;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.font-catatan {
+  font-family: var(--font-serif);
+  letter-spacing: -0.02em;
+}
+
+.kicker {
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+/* garis ledger tipis, bukan kartu tebal */
+.ledger-row + .ledger-row {
+  border-top: 1px solid var(--color-garis);
+}
+
+/* hilangkan glow/focus ring generik AI */
+:focus-visible {
+  outline: 2px solid #1d3b2e;
+  outline-offset: 2px;
+}
+
+::selection {
+  background: #1d3b2e;
+  color: #faf7f0;
+}
+
+/* pola tenun halus khas — sangat tipis, bukan gradient ungu AI */
+.pola-kain {
+  background-image: radial-gradient(#1d3b2e 0.55px, transparent 0.55px);
+  background-size: 14px 14px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #101511;
+    --foreground: #ece7db;
+  }
+  html {
+    background: #000;
+  }
+  body {
+    background: #101511;
+  }
+  .ledger-row + .ledger-row {
+    border-top-color: #263027;
+  }
+}
