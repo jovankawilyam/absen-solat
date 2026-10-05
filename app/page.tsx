@@ -14,6 +14,8 @@ import {
 } from "@/lib/prayer";
 import { useSettings } from "@/lib/settings";
 import { useCloudProfile } from "@/lib/cloud/use-profile";
+import { useAnggota } from "@/lib/cloud/use-anggota";
+import AnggotaList from "@/components/AnggotaList";
 import { useCloudDayPhotos } from "@/lib/cloud/use-day-photos";
 import { deleteCloudPhoto } from "@/lib/cloud/attendance";
 import { flushOutbox, pendingCount } from "@/lib/cloud/outbox";
@@ -36,7 +38,7 @@ function jamSaja(iso: string): string {
 }
 
 export default function Home() {
-  const { profile, ready: profilSiap } = useCloudProfile();
+  const { user, profile, ready: profilSiap } = useCloudProfile();
   const { settings, ready: settingSiap } = useSettings();
   const [dateKey, setDateKey] = useState(todayKey());
   const [times, setTimes] = useState<PrayerTimes | null>(null);
@@ -48,6 +50,7 @@ export default function Home() {
 
   const photos = useCloudDayPhotos(profile?.id ?? null, dateKey);
   const ready = profilSiap && settingSiap;
+  const { anggota, loading: anggotaLoading } = useAnggota(user?.id ?? null, ready);
 
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 1000);
@@ -160,6 +163,7 @@ export default function Home() {
           <span className="ml-2 text-[11px] text-[#8a8474]">akun Google-mu</span>
         </p>
       </div>
+      <AnggotaList anggota={anggota} loading={anggotaLoading} />
       {antrean > 0 && (
         <p className="mt-2 border-b border-dashed border-[#c9bfa9] pb-2 text-xs text-[#8a8474]">
           {antrean} foto menunggu jaringan — terkirim otomatis saat online.

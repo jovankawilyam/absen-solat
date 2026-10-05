@@ -5,6 +5,8 @@ import { useCloudProfile } from "@/lib/cloud/use-profile";
 import { useSettings } from "@/lib/settings";
 import { cloudStorageStats, deleteAllMine } from "@/lib/cloud/attendance";
 import { hasLocalData, migrateLocalToCloud } from "@/lib/cloud/migrate";
+import { useAnggota } from "@/lib/cloud/use-anggota";
+import AnggotaList from "@/components/AnggotaList";
 
 function fmtMB(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -35,6 +37,7 @@ export default function Keluarga() {
   const [photoBytes, setPhotoBytes] = useState(0);
   const [localCount, setLocalCount] = useState(0);
   const [migrating, setMigrating] = useState(false);
+  const { anggota, loading: anggotaLoading } = useAnggota(user?.id ?? null, ready);
 
   useEffect(() => {
     if (ready && profile) {
@@ -137,6 +140,8 @@ export default function Keluarga() {
       >
         Keluar dari akun
       </button>
+
+      <AnggotaList anggota={anggota} loading={anggotaLoading} />
 
       <h2 className="kicker mt-7 text-[#6b655a]">Foto tersimpan — cloud</h2>
       <div className="mt-2 border border-[#e3d9c4] p-3.5 dark:border-[#263027]">
