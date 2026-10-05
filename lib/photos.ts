@@ -21,7 +21,7 @@ export function formatStampID(d: Date): { baris1: string; baris2: string } {
 
 export async function captureStamped(
   video: HTMLVideoElement,
-  opts: { profileName: string; sholatLabel: string }
+  opts: { profileName: string; sholatLabel: string; mirror?: boolean }
 ): Promise<{ blob: Blob; dataUrl: string; w: number; h: number; size: number; takenAt: Date }> {
   const vw = video.videoWidth;
   const vh = video.videoHeight;
@@ -36,7 +36,17 @@ export async function captureStamped(
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Canvas tidak didukung browser ini.");
 
-  ctx.drawImage(video, 0, 0, w, h);
+  if (opts.mirror) {
+    // Kamera depan: kembalikan hasil agar tidak terbalik seperti kaca.
+    // Preview sudah di-mirror via CSS, jadi balik frame di sini sebelum tempel teks.
+    ctx.save();
+    ctx.translate(w, 0);
+    ctx.scale(-1, 1);
+    ctx.drawImage(video, 0, 0, w, h);
+    ctx.restore();
+  } else {
+    ctx.drawImage(video, 0, 0, w, h);
+  }
 
   const takenAt = new Date();
   const { baris1, baris2 } = formatStampID(takenAt);

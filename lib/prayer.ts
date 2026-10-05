@@ -83,6 +83,44 @@ export function prayerDate(dateKey: string, hhmm: string): Date {
 
 const ORDER: SholatName[] = ["subuh", "dzuhur", "ashar", "maghrib", "isya"];
 
+export type WindowState = "bisa" | "belum" | "hangus";
+
+export function sholatWindow(
+  now: Date,
+  dateKey: string,
+  name: SholatName,
+  times: PrayerTimes | null
+): { state: WindowState; mulai: Date | null; batas: Date | null; nextLabel: string | null } {
+  if (!times) return { state: "bisa", mulai: null, batas: null, nextLabel: null };
+  const today = (() => {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  })();
+  // Hari lampau: semua hangus. Hari depan (tak terjadi di UI): belum.
+  if (dateKey < today) return { state: "hangus", mulai: null, batas: null, nextLabel: null };
+  if (dateKey > today) return { state: "belum", mulai: null, batas: null, nextLabel: null };
+
+  const idx = ORDER.indexOf(name);
+  const mulai = prayerDate(dateKey, times[name]);
+  let batas: Date | null = null;
+  let nextLabel: string | null = null;
+  if (idx < ORDER.length - 1) {
+    const next = ORDER[idx + 1];
+    batas = prayerDate(dateKey, times[next]);
+    nextLabel = labelOf(next);
+  } else {
+    // Isya berlaku sampai lewat tengah malam
+    const [y, m, d] = dateKey.split("-").map(Number);
+    batas = new Date(y, m - 1, d, 23, 59, 59);
+  }
+  if (now.getTime() < mulai.getTime()) return { state: "belum", mulai, batas, nextLabel };
+  if (batas && now.getTime() >= batas.getTime()) return { state: "hangus", mulai, batas, nextLabel };
+  return { state: "bisa", mulai, batas, nextLabel };
+}
+
 export function nextPrayer(now: Date, dateKey: string, times: PrayerTimes | null) {
   if (!times) return null;
   for (const name of ORDER) {

@@ -13,6 +13,8 @@ export default function CameraSheet({
   sholat,
   sholatLabel,
   jadwalHHMM,
+  batasISO,
+  mulaiISO,
   onClose,
   onSaved,
 }: {
@@ -22,6 +24,8 @@ export default function CameraSheet({
   sholat: SholatName;
   sholatLabel: string;
   jadwalHHMM: string;
+  batasISO?: string | null;
+  mulaiISO?: string | null;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -89,7 +93,7 @@ export default function CameraSheet({
     const v = videoRef.current;
     if (!v) return;
     try {
-      const r = await captureStamped(v, { profileName, sholatLabel });
+      const r = await captureStamped(v, { profileName, sholatLabel, mirror: facing === "user" });
       pendingRef.current = { blob: r.blob, w: r.w, h: r.h, size: r.size, takenAt: r.takenAt };
       setPreview(r.dataUrl);
     } catch (e) {
@@ -100,6 +104,15 @@ export default function CameraSheet({
   const simpan = async () => {
     const p = pendingRef.current;
     if (!p || saving) return;
+    // Kunci susulan: tolak bila lewat batas waktu solat berikutnya
+    if (mulaiISO && p.takenAt.getTime() < new Date(mulaiISO).getTime()) {
+      setError(`Belum masuk waktu ${sholatLabel} (${jadwalHHMM}). Tunggu sampai azan.`);
+      return;
+    }
+    if (batasISO && p.takenAt.getTime() >= new Date(batasISO).getTime()) {
+      setError(`Waktu ${sholatLabel} sudah habis. Tak bisa susulan setelah waktunya lewat.`);
+      return;
+    }
     setSaving(true);
     try {
       let lateMin: number | null = null;
@@ -156,7 +169,13 @@ export default function CameraSheet({
 
       <div className="relative flex-1 overflow-hidden bg-black">
         {!preview ? (
-          <video ref={videoRef} playsInline muted autoPlay className="h-full w-full object-cover" />
+          <video
+            ref={videoRef}
+            playsInline
+            muted
+            autoPlay
+            className={`h-full w-full object-cover ${facing === "user" ? "-scale-x-100" : ""}`}
+          />
         ) : (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={preview} alt="Preview absen" className="h-full w-full object-contain" />

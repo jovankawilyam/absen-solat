@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useAbsen } from "@/lib/store";
 import { SHOLAT_LIST, type SholatName } from "@/lib/types";
 import { addDaysKey, formatHijriah, formatTanggalID, todayKey } from "@/lib/dates";
-import { fetchPrayerTimes, nextPrayer, formatCountdown, type PrayerTimes } from "@/lib/prayer";
+import { fetchPrayerTimes, nextPrayer, formatCountdown, sholatWindow, type PrayerTimes } from "@/lib/prayer";
 import { useDayPhotos } from "@/lib/usePhotos";
 import { deletePhotoRecord } from "@/lib/attendance";
 import ProfileSwitcher from "@/components/ProfileSwitcher";
@@ -250,8 +250,11 @@ export default function Home() {
         {SHOLAT_LIST.map((s, idx) => {
           const rec = photos.map[s.key];
           const done = !!rec;
+          const win = sholatWindow(now, dateKey, s.key, times);
+          const hangus = !done && win.state === "hangus";
+          const menunggu = !done && win.state === "belum";
           return (
-            <div key={s.key} className="ledger-row flex items-center gap-3 py-3">
+            <div key={s.key} className={`ledger-row flex items-center gap-3 py-3 ${hangus ? "opacity-60" : ""}`}>
               <span className="tabular w-6 shrink-0 text-xs text-[#a39c8b]">
                 {String(idx + 1).padStart(2, "0")}
               </span>
@@ -282,18 +285,42 @@ export default function Home() {
                       {rec.lateMin != null && rec.lateMin > 0 ? `Telat ${rec.lateMin} mnt` : "Tepat waktu"}
                     </p>
                   </>
+                ) : hangus ? (
+                  <>
+                    <p className="text-[13px] font-medium text-[#9b2c1f]">Terlewat</p>
+                    <p className="mt-0.5 text-xs text-[#8a8474]">
+                      {win.nextLabel ? `Batas sampai masuk ${win.nextLabel}` : "Hari sudah lewat — tak bisa susulan"}
+                    </p>
+                  </>
+                ) : menunggu ? (
+                  <>
+                    <p className="text-[13px] font-medium text-[#8a8474]">Belum masuk waktu</p>
+                    <p className="tabular mt-0.5 text-xs text-[#8a8474]">
+                      Mulai {times?.[s.key] ?? "--:--"}
+                    </p>
+                  </>
                 ) : (
                   <p className="text-xs leading-relaxed text-[#8a8474]">Belum dicatat. Jepret langsung dari kamera.</p>
                 )}
               </div>
               {!done ? (
-                <button
-                  onClick={() => setShoot(s.key)}
-                  className="shrink-0 border border-[#1c1a15] px-4 py-2 text-[13px] font-semibold transition hover:bg-[#1c1a15] hover:text-[#faf7f0] active:scale-[0.97] dark:border-[#ece7db] dark:hover:bg-[#ece7db] dark:hover:text-[#12241c]"
-                >
-                  Absen
-                </button>
-              ) : (
+                hangus ? (
+                  <span className="shrink-0 border border-[#e3d9c4] px-4 py-2 text-[13px] text-[#a39c8b] dark:border-[#263027]">
+                    Hangus
+                  </span>
+                ) : menunggu ? (
+                  <span className="shrink-0 border border-[#e3d9c4] px-4 py-2 text-[13px] text-[#a39c8b] dark:border-[#263027]">
+                    Tunggu
+                  </span>
+                ) : (
+                  <button
+                    onClick={() => setShoot(s.key)}
+                    className="shrink-0 border border-[#1c1a15] px-4 py-2 text-[13px] font-semibold transition hover:bg-[#1c1a15] hover:text-[#faf7f0] active:scale-[0.97] dark:border-[#ece7db] dark:hover:bg-[#ece7db] dark:hover:text-[#12241c]"
+                  >
+                    Absen
+                  </button>
+                )
+              ) : win.state === "bisa" ? (
                 <button
                   onClick={async () => {
                     if (!rec) return;
@@ -306,6 +333,8 @@ export default function Home() {
                 >
                   Ulangi
                 </button>
+              ) : (
+                <span className="shrink-0 text-[11px] text-[#a39c8b]">Terkunci</span>
               )}
             </div>
           );
@@ -333,6 +362,8 @@ export default function Home() {
           sholat={shoot}
           sholatLabel={shootLabel}
           jadwalHHMM={times?.[shoot] ?? "--:--"}
+          batasISO={sholatWindow(now, dateKey, shoot, times).batas?.toISOString() ?? null}
+          mulaiISO={sholatWindow(now, dateKey, shoot, times).mulai?.toISOString() ?? null}
           onClose={() => setShoot(null)}
           onSaved={() => {
             setShoot(null);
