@@ -2,13 +2,21 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useAbsen } from "@/lib/store";
-import { SHOLAT_LIST, type SholatName } from "@/lib/types";
+import type { SholatName } from "@/lib/types";
+import { SHOLAT_LIST } from "@/lib/types";
 import { addDaysKey, formatHijriah, formatTanggalID, todayKey } from "@/lib/dates";
-import { fetchPrayerTimes, nextPrayer, formatCountdown, sholatWindow, type PrayerTimes } from "@/lib/prayer";
-import { useDayPhotos } from "@/lib/usePhotos";
-import { deletePhotoRecord } from "@/lib/attendance";
-import ProfileSwitcher from "@/components/ProfileSwitcher";
+import {
+  fetchPrayerTimes,
+  nextPrayer,
+  formatCountdown,
+  sholatWindow,
+  type PrayerTimes,
+} from "@/lib/prayer";
+import { useSettings } from "@/lib/settings";
+import { useCloudProfile } from "@/lib/cloud/use-profile";
+import { useCloudDayPhotos } from "@/lib/cloud/use-day-photos";
+import { deleteCloudPhoto } from "@/lib/cloud/attendance";
+import { flushOutbox, pendingCount } from "@/lib/cloud/outbox";
 import PhotoThumb from "@/components/PhotoThumb";
 import CameraSheet from "@/components/CameraSheet";
 import { IcoCek, IcoJam, IcoKamera, IcoPin } from "@/components/icons";
@@ -28,41 +36,40 @@ function jamSaja(iso: string): string {
 }
 
 export default function Home() {
-  const api = useAbsen();
-  const { store, activeProfile, ready } = api;
+  const { profile, ready: profilSiap } = useCloudProfile();
+  const { settings, ready: settingSiap } = useSettings();
   const [dateKey, setDateKey] = useState(todayKey());
   const [times, setTimes] = useState<PrayerTimes | null>(null);
   const [offline, setOffline] = useState(false);
   const [now, setNow] = useState(() => new Date());
-  const [newName, setNewName] = useState("");
-  const [showAdd, setShowAdd] = useState(false);
   const [shoot, setShoot] = useState<SholatName | null>(null);
-  const [zoomUrl, setZoomUrl] = useState<string | null>(null);
+  const [zoom, setZoom] = useState<string | null>(null);
+  const [antrean, setAntrean] = useState(0);
 
-  const openZoom = (blob: Blob) => {
-    setZoomUrl((prev) => {
-      if (prev) URL.revokeObjectURL(prev);
-      return URL.createObjectURL(blob);
-    });
-  };
-  const closeZoom = () => {
-    setZoomUrl((prev) => {
-      if (prev) URL.revokeObjectURL(prev);
-      return null;
-    });
-  };
-
-  const photos = useDayPhotos(activeProfile?.id ?? null, dateKey);
+  const photos = useCloudDayPhotos(profile?.id ?? null, dateKey);
+  const ready = profilSiap && settingSiap;
 
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(t);
   }, []);
 
+  // Kirim antrean offline begitu aplikasi dibuka
+  useEffect(() => {
+    if (!ready || !profile) return;
+    pendingCount().then(setAntrean).catch(() => {});
+    if (!navigator.onLine) return;
+    flushOutbox().then((r) => {
+      setAntrean(r.sisa);
+      if (r.terkirim > 0) photos.refresh();
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, profile?.id]);
+
   useEffect(() => {
     if (!ready) return;
     let cancel = false;
-    fetchPrayerTimes(dateKey, store.settings.lat, store.settings.lng, store.settings.method)
+    fetchPrayerTimes(dateKey, settings.lat, settings.lng, settings.method)
       .then((v) => {
         if (cancel) return;
         setTimes(v);
@@ -76,52 +83,10 @@ export default function Home() {
     return () => {
       cancel = true;
     };
-  }, [ready, dateKey, store.settings.lat, store.settings.lng, store.settings.method]);
+  }, [ready, dateKey, settings.lat, settings.lng, settings.method]);
 
   if (!ready) return <div className="p-6 text-sm text-[#6b655a]">Membuka buku…</div>;
-
-  if (store.profiles.length === 0) {
-    return (
-      <main className="px-5 py-8">
-        <p className="kicker text-[#6b655a]">Assalamu&apos;alaikum</p>
-        <h1 className="font-catatan mt-2 text-[32px] leading-[1.05]">
-          Absen solat,
-          <br />
-          <em className="font-normal">dengan foto.</em>
-        </h1>
-        <p className="mt-3 max-w-[32ch] text-sm leading-relaxed text-[#6b655a]">
-          Setiap solat dicatat lewat kamera langsung. Tanggal dan jam ditempel otomatis di foto — tidak bisa
-          pakai galeri.
-        </p>
-        <form
-          className="mt-6"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (!newName.trim()) return;
-            api.addProfile(newName);
-            setNewName("");
-          }}
-        >
-          <label htmlFor="nama-pertama" className="kicker text-[#6b655a]">
-            Anggota pertama
-          </label>
-          <div className="mt-2 flex gap-2">
-            <input
-              id="nama-pertama"
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              placeholder="Nama, misal: Ayah"
-              className="min-w-0 flex-1 border-b-2 border-[#1c1a15] bg-transparent px-0 py-2.5 text-[15px] placeholder:text-[#a39c8b] focus:border-[#1d3b2e] focus:outline-none dark:border-[#ece7db] dark:placeholder:text-[#5c665c]"
-            />
-            <button className="bg-[#1d3b2e] px-5 py-2.5 text-sm font-semibold text-[#faf7f0] transition hover:bg-[#142a21] active:scale-[0.98] dark:bg-[#dcead7] dark:text-[#12241c]">
-              Tambah
-            </button>
-          </div>
-          <p className="mt-3 text-xs text-[#8a8474]">Contoh: Ayah, Ibu, Kakak. Bisa tambah lagi nanti.</p>
-        </form>
-      </main>
-    );
-  }
+  if (!profile) return <div className="p-6 text-sm text-[#6b655a]">Menyiapkan profil…</div>;
 
   const upcoming = dateKey === todayKey() && times ? nextPrayer(now, dateKey, times) : null;
   const filled = photos.filled;
@@ -138,7 +103,7 @@ export default function Home() {
           <h1 className="font-catatan mt-1 text-[26px] leading-tight">{formatTanggalID(dateKey)}</h1>
           <p className="mt-1.5 flex items-center gap-1 text-xs text-[#6b655a] dark:text-[#9a937f]">
             <IcoPin />
-            {store.settings.label}
+            {settings.label}
             <span aria-hidden className="text-[#c9bfa9]">
               ·
             </span>
@@ -172,37 +137,34 @@ export default function Home() {
         </div>
       </div>
 
-      <div className="mt-4">
-        <ProfileSwitcher
-          profiles={store.profiles}
-          activeId={activeProfile?.id ?? null}
-          onPick={api.setActive}
-          onAdd={() => setShowAdd((v) => !v)}
-        />
-        {showAdd && (
-          <form
-            className="mt-2 flex gap-2"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (!newName.trim()) return;
-              api.addProfile(newName);
-              setNewName("");
-              setShowAdd(false);
-            }}
+      {/* siapa yang absen */}
+      <div className="mt-4 flex items-center gap-2.5 border border-[#e3d9c4] px-3 py-2 dark:border-[#263027]">
+        {profile.avatar_url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={profile.avatar_url}
+            alt={profile.name}
+            className="h-7 w-7 rounded-full object-cover"
+            referrerPolicy="no-referrer"
+          />
+        ) : (
+          <span
+            className="flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold text-white"
+            style={{ background: profile.color }}
           >
-            <input
-              autoFocus
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              placeholder="Nama anggota baru"
-              className="min-w-0 flex-1 border border-[#e3d9c4] bg-white px-3 py-2 text-sm placeholder:text-[#a39c8b] focus:outline-none dark:border-[#263027] dark:bg-[#161c17] dark:placeholder:text-[#5c665c]"
-            />
-            <button className="bg-[#1c1a15] px-4 py-2 text-sm font-semibold text-[#faf7f0] dark:bg-[#ece7db] dark:text-[#12241c]">
-              Simpan
-            </button>
-          </form>
+            {profile.name.charAt(0).toUpperCase()}
+          </span>
         )}
+        <p className="flex-1 text-sm">
+          <span className="font-semibold">{profile.name}</span>
+          <span className="ml-2 text-[11px] text-[#8a8474]">akun Google-mu</span>
+        </p>
       </div>
+      {antrean > 0 && (
+        <p className="mt-2 border-b border-dashed border-[#c9bfa9] pb-2 text-xs text-[#8a8474]">
+          {antrean} foto menunggu jaringan — terkirim otomatis saat online.
+        </p>
+      )}
 
       {/* pengingat berikutnya — strip, bukan blok solid */}
       {upcoming && (
@@ -228,7 +190,7 @@ export default function Home() {
       <div className="mt-5">
         <div className="flex items-baseline justify-between">
           <p className="text-sm">
-            <span className="font-catatan text-[17px] font-semibold">{activeProfile?.name}</span>
+            <span className="font-catatan text-[17px] font-semibold">{profile.name}</span>
             <span className="tabular ml-2 text-[13px] text-[#6b655a] dark:text-[#9a937f]">
               {filled}/5 · {pct}%
             </span>
@@ -266,7 +228,7 @@ export default function Home() {
                 </p>
               </div>
               {done && rec ? (
-                <PhotoThumb blob={rec.photo} alt={`Absen ${s.label}`} onClick={() => openZoom(rec.photo)} />
+                <PhotoThumb src={rec.url} alt={`Absen ${s.label}`} onClick={() => setZoom(rec.url)} />
               ) : (
                 <span className="flex h-12 w-12 shrink-0 items-center justify-center border border-dashed border-[#c9bfa9] text-[#a39c8b] dark:border-[#3a443b]">
                   <IcoKamera className="h-5 w-5" />
@@ -295,9 +257,7 @@ export default function Home() {
                 ) : menunggu ? (
                   <>
                     <p className="text-[13px] font-medium text-[#8a8474]">Belum masuk waktu</p>
-                    <p className="tabular mt-0.5 text-xs text-[#8a8474]">
-                      Mulai {times?.[s.key] ?? "--:--"}
-                    </p>
+                    <p className="tabular mt-0.5 text-xs text-[#8a8474]">Mulai {times?.[s.key] ?? "--:--"}</p>
                   </>
                 ) : (
                   <p className="text-xs leading-relaxed text-[#8a8474]">Belum dicatat. Jepret langsung dari kamera.</p>
@@ -325,7 +285,7 @@ export default function Home() {
                   onClick={async () => {
                     if (!rec) return;
                     if (confirm(`Hapus foto ${s.label} dan absen ulang?`)) {
-                      await deletePhotoRecord(rec.id);
+                      await deleteCloudPhoto(rec.id);
                       photos.refresh();
                     }
                   }}
@@ -343,21 +303,19 @@ export default function Home() {
 
       {filled === 5 && (
         <div className="mt-4 border border-[#e3d9c4] px-4 py-3 text-center dark:border-[#263027]">
-          <p className="font-catatan text-[15px] italic">
-            Lengkap lima waktu hari ini, {activeProfile?.name}. Alhamdulillah.
-          </p>
+          <p className="font-catatan text-[15px] italic">Lengkap lima waktu hari ini, {profile.name}. Alhamdulillah.</p>
         </div>
       )}
       {filled < 5 && (
         <p className="mt-3 text-center text-[11px] tracking-wide text-[#a39c8b]">
-          {5 - filled} catatan tersisa hari ini · foto tersimpan di perangkat
+          {5 - filled} catatan tersisa hari ini · tersimpan di cloud
         </p>
       )}
 
-      {shoot && activeProfile && (
+      {shoot && (
         <CameraSheet
-          profileId={activeProfile.id}
-          profileName={activeProfile.name}
+          profileId={profile.id}
+          profileName={profile.name}
           dateKey={dateKey}
           sholat={shoot}
           sholatLabel={shootLabel}
@@ -368,14 +326,15 @@ export default function Home() {
           onSaved={() => {
             setShoot(null);
             photos.refresh();
+            pendingCount().then(setAntrean).catch(() => {});
           }}
         />
       )}
 
-      {zoomUrl && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4" onClick={closeZoom}>
+      {zoom && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4" onClick={() => setZoom(null)}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={zoomUrl} alt="Foto absen besar" className="max-h-full max-w-full" />
+          <img src={zoom} alt="Foto absen besar" className="max-h-full max-w-full" />
         </div>
       )}
     </main>

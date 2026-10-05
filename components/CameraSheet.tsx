@@ -3,8 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import type { SholatName } from "@/lib/types";
 import { captureStamped, stopStream } from "@/lib/photos";
-import { nid, savePhotoRecord } from "@/lib/attendance";
 import { prayerDate } from "@/lib/prayer";
+import { saveCloudPhoto } from "@/lib/cloud/attendance";
+import { nid, stashPending } from "@/lib/cloud/outbox";
 
 export default function CameraSheet({
   profileId,
@@ -122,18 +123,43 @@ export default function CameraSheet({
       } catch {
         lateMin = null;
       }
-      await savePhotoRecord({
-        id: nid(),
-        profileId,
-        dateKey,
-        sholat,
-        takenAt: p.takenAt.toISOString(),
-        lateMin,
-        w: p.w,
-        h: p.h,
-        size: p.size,
-        photo: p.blob,
-      });
+      try {
+        await saveCloudPhoto({
+          profileId,
+          dateKey,
+          sholat,
+          takenAt: p.takenAt,
+          lateMin,
+          w: p.w,
+          h: p.h,
+          size: p.size,
+          blob: p.blob,
+        });
+      } catch (e) {
+        const msg = (e as Error).message;
+        const jaringan = /gagal mengambil|fetch|network|upload foto gagal|load failed/i.test(msg);
+        if (!jaringan) {
+          setError(msg);
+          setSaving(false);
+          return;
+        }
+        // Jaringan gagal: simpan di HP, terkirim otomatis saat online
+        await stashPending({
+          id: nid(),
+          profileId,
+          dateKey,
+          sholat,
+          takenAt: p.takenAt.toISOString(),
+          lateMin,
+          w: p.w,
+          h: p.h,
+          size: p.size,
+          photo: p.blob,
+        });
+        stopStream(stream);
+        onSaved();
+        return;
+      }
       stopStream(stream);
       onSaved();
     } catch (e) {

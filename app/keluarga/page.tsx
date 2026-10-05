@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useAbsen } from "@/lib/store";
-import { clearAllPhotos, storageStats } from "@/lib/attendance";
+import { useCloudProfile } from "@/lib/cloud/use-profile";
+import { useSettings } from "@/lib/settings";
+import { cloudStorageStats, deleteAllMine } from "@/lib/cloud/attendance";
+import { hasLocalData, migrateLocalToCloud } from "@/lib/cloud/migrate";
 
 function fmtMB(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -20,10 +22,9 @@ const KOTA = [
 ];
 
 export default function Keluarga() {
-  const api = useAbsen();
-  const { store, ready } = api;
-  const [name, setName] = useState("");
-  const [editing, setEditing] = useState<string | null>(null);
+  const { profile, user, ready, rename, keluar } = useCloudProfile();
+  const { settings, patch, ready: settingSiap } = useSettings();
+  const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState("");
   const [lat, setLat] = useState("");
   const [lng, setLng] = useState("");
@@ -32,22 +33,25 @@ export default function Keluarga() {
   const [msg, setMsg] = useState("");
   const [photoCount, setPhotoCount] = useState(0);
   const [photoBytes, setPhotoBytes] = useState(0);
-
-  const refreshStorage = () => {
-    storageStats(store.profiles.map((p) => p.id))
-      .then((s) => {
-        setPhotoCount(s.count);
-        setPhotoBytes(s.bytes);
-      })
-      .catch(() => {});
-  };
+  const [localCount, setLocalCount] = useState(0);
+  const [migrating, setMigrating] = useState(false);
 
   useEffect(() => {
-    if (ready) refreshStorage();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, store.profiles.length]);
+    if (ready && profile) {
+      cloudStorageStats(profile.id)
+        .then((s) => {
+          setPhotoCount(s.count);
+          setPhotoBytes(s.bytes);
+        })
+        .catch(() => {});
+      hasLocalData()
+        .then(setLocalCount)
+        .catch(() => {});
+    }
+  }, [ready, profile]);
 
-  if (!ready) return <div className="p-6 text-sm text-[#6b655a]">Membuka buku…</div>;
+  if (!ready || !settingSiap) return <div className="p-6 text-sm text-[#6b655a]">Membuka buku…</div>;
+  if (!profile) return <div className="p-6 text-sm text-[#6b655a]">Menyiapkan profil…</div>;
 
   const useGPS = () => {
     if (!("geolocation" in navigator)) {
@@ -57,11 +61,7 @@ export default function Keluarga() {
     setLocating(true);
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        api.setSettings({
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude,
-          label: "Lokasi saya (GPS)",
-        });
+        patch({ lat: pos.coords.latitude, lng: pos.coords.longitude, label: "Lokasi saya (GPS)" });
         setLocating(false);
         setMsg("Lokasi diperbarui dari GPS.");
       },
@@ -77,122 +77,128 @@ export default function Keluarga() {
 
   return (
     <main className="px-5 pt-5 pb-6">
-      <p className="kicker text-[#b4532a]">Pengaturan</p>
-      <h1 className="font-catatan mt-1 text-[26px] leading-tight">Keluarga</h1>
-      <p className="mt-1 text-xs text-[#6b655a] dark:text-[#9a937f]">Anggota · lokasi jadwal · penyimpanan foto</p>
+      <p className="kicker text-[#b4532a]">Akunmu</p>
+      <h1 className="font-catatan mt-1 text-[26px] leading-tight">Profil saya</h1>
 
-      <form
-        className="mt-4 flex gap-2"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (!name.trim()) return;
-          api.addProfile(name);
-          setName("");
-        }}
-      >
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Tambah anggota, misal: Adik"
-          className={`min-w-0 flex-1 ${inputCls}`}
-        />
-        <button className="bg-[#1c1a15] px-4 py-2.5 text-sm font-semibold text-[#faf7f0] dark:bg-[#ece7db] dark:text-[#12241c]">
-          Tambah
-        </button>
-      </form>
-
-      <div className="mt-3 border-t border-[#1c1a15]/80 dark:border-[#3a443b]">
-        {store.profiles.map((p) => (
-          <div key={p.id} className="ledger-row flex items-center gap-2.5 py-2.5">
-            <span
-              className="flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold text-white"
-              style={{ background: p.color }}
+      <div className="mt-3 flex items-center gap-3 border border-[#e3d9c4] p-3 dark:border-[#263027]">
+        {profile.avatar_url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={profile.avatar_url} alt={profile.name} className="h-11 w-11 rounded-full object-cover" referrerPolicy="no-referrer" />
+        ) : (
+          <span
+            className="flex h-11 w-11 items-center justify-center rounded-full text-lg font-bold text-white"
+            style={{ background: profile.color }}
+          >
+            {profile.name.charAt(0).toUpperCase()}
+          </span>
+        )}
+        <div className="min-w-0 flex-1">
+          {editing ? (
+            <form
+              className="flex gap-1.5"
+              onSubmit={(e) => {
+                e.preventDefault();
+                rename(editName);
+                setEditing(false);
+              }}
             >
-              {p.name.charAt(0).toUpperCase()}
-            </span>
-            {editing === p.id ? (
-              <form
-                className="flex flex-1 gap-1.5"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  api.renameProfile(p.id, editName);
-                  setEditing(null);
-                }}
-              >
-                <input
-                  autoFocus
-                  value={editName}
-                  onChange={(e) => setEditName(e.target.value)}
-                  className={`min-w-0 flex-1 ${inputCls} !py-1.5`}
-                />
-                <button className="bg-[#1c1a15] px-3 py-1.5 text-xs font-semibold text-[#faf7f0] dark:bg-[#ece7db] dark:text-[#12241c]">
-                  OK
-                </button>
-              </form>
-            ) : (
-              <>
-                <p className="flex-1 text-sm font-medium">
-                  {p.name}
-                  {store.activeProfileId === p.id && (
-                    <span className="ml-2 text-[11px] font-normal text-[#8a8474]">· aktif</span>
-                  )}
-                </p>
-                <button
-                  onClick={() => api.setActive(p.id)}
-                  className="px-2 py-1.5 text-xs underline decoration-dotted underline-offset-4 hover:text-black dark:hover:text-white"
-                >
-                  Pilih
-                </button>
-                <button
-                  onClick={() => {
-                    setEditing(p.id);
-                    setEditName(p.name);
-                  }}
-                  className="border border-[#e3d9c4] px-2 py-1.5 text-xs dark:border-[#263027]"
-                  aria-label={`Ubah nama ${p.name}`}
-                >
-                  Ubah
-                </button>
-                <button
-                  onClick={() => {
-                    if (confirm(`Hapus ${p.name}? Foto absennya ikut terhapus dari daftar profil ini.`))
-                      api.removeProfile(p.id);
-                  }}
-                  className="px-1.5 py-1.5 text-xs text-[#9b2c1f]"
-                  aria-label={`Hapus ${p.name}`}
-                >
-                  Hapus
-                </button>
-              </>
-            )}
-          </div>
-        ))}
+              <input
+                autoFocus
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                className={`min-w-0 flex-1 ${inputCls} !py-1.5`}
+              />
+              <button className="bg-[#1c1a15] px-3 py-1.5 text-xs font-semibold text-[#faf7f0] dark:bg-[#ece7db] dark:text-[#12241c]">
+                OK
+              </button>
+            </form>
+          ) : (
+            <>
+              <p className="truncate text-sm font-semibold">{profile.name}</p>
+              <p className="truncate text-xs text-[#8a8474]">{user?.email}</p>
+            </>
+          )}
+        </div>
+        {!editing && (
+          <button
+            onClick={() => {
+              setEditing(true);
+              setEditName(profile.name);
+            }}
+            className="border border-[#e3d9c4] px-2.5 py-1.5 text-xs dark:border-[#263027]"
+          >
+            Ubah nama
+          </button>
+        )}
       </div>
+      <button
+        onClick={keluar}
+        className="mt-2 w-full border border-[#e3d9c4] px-3 py-2.5 text-sm transition hover:border-[#1c1a15] dark:border-[#263027]"
+      >
+        Keluar dari akun
+      </button>
 
-      <h2 className="kicker mt-7 text-[#6b655a]">Penyimpanan foto — perangkat ini</h2>
+      <h2 className="kicker mt-7 text-[#6b655a]">Foto tersimpan — cloud</h2>
       <div className="mt-2 border border-[#e3d9c4] p-3.5 dark:border-[#263027]">
         <p className="tabular text-sm font-semibold">
           {photoCount} foto · {fmtMB(photoBytes)}
         </p>
         <p className="mt-1 text-xs leading-relaxed text-[#6b655a] dark:text-[#9a937f]">
-          Foto disimpan di IndexedDB peramban, bukan galeri HP. Hapus yang lama bila memori penuh.
+          Foto tersimpan di cloud dan tampil di semua browser/HP-mu.
         </p>
         <button
           onClick={async () => {
-            if (!confirm("Hapus SEMUA foto absen di perangkat ini?")) return;
-            await clearAllPhotos();
-            refreshStorage();
+            if (!confirm("Hapus SEMUA foto absen milikmu di cloud?")) return;
+            await deleteAllMine(profile.id);
+            const s = await cloudStorageStats(profile.id);
+            setPhotoCount(s.count);
+            setPhotoBytes(s.bytes);
             setMsg("Semua foto dihapus.");
           }}
           className="mt-2.5 w-full border border-[#e3d9c4] px-3 py-2 text-xs font-medium transition hover:border-[#1c1a15] dark:border-[#263027]"
         >
-          Hapus semua foto
+          Hapus semua foto saya
         </button>
       </div>
 
-      <h2 className="kicker mt-7 text-[#6b655a]">Lokasi jadwal solat</h2>
+      <h2 className="kicker mt-7 text-[#6b655a]">Pindahan dari HP ini</h2>
+      <div className="mt-2 border border-[#e3d9c4] p-3.5 dark:border-[#263027]">
+        {localCount > 0 ? (
+          <>
+            <p className="text-sm">
+              Ditemukan <span className="tabular font-semibold">{localCount}</span> foto lama di browser ini.
+            </p>
+            <button
+              onClick={async () => {
+                setMigrating(true);
+                try {
+                  const r = await migrateLocalToCloud(profile.id);
+                  const s = await cloudStorageStats(profile.id);
+                  setPhotoCount(s.count);
+                  setPhotoBytes(s.bytes);
+                  setLocalCount(0);
+                  setMsg(`Pindah ${r.pindah} dari ${r.total} foto lama ke cloud.`);
+                } catch (e) {
+                  setMsg(`Gagal pindah: ${(e as Error).message}`);
+                }
+                setMigrating(false);
+              }}
+              disabled={migrating}
+              className="mt-2.5 w-full bg-[#1d3b2e] px-3 py-2.5 text-sm font-semibold text-[#faf7f0] transition hover:bg-[#142a21] disabled:opacity-50 dark:bg-[#dcead7] dark:text-[#12241c]"
+            >
+              {migrating ? "Memindahkan…" : `Pindahkan ${localCount} foto ke cloud`}
+            </button>
+          </>
+        ) : (
+          <p className="text-xs leading-relaxed text-[#8a8474]">
+            Tidak ada data lama di browser ini. Semua sudah di cloud.
+          </p>
+        )}
+      </div>
+
+      <h2 className="kicker mt-7 text-[#6b655a]">Lokasi jadwal solat — HP ini</h2>
       <p className="tabular mt-1.5 text-xs text-[#6b655a] dark:text-[#9a937f]">
-        {store.settings.label} — {store.settings.lat.toFixed(2)}, {store.settings.lng.toFixed(2)}
+        {settings.label} — {settings.lat.toFixed(2)}, {settings.lng.toFixed(2)}
       </p>
       <button
         onClick={useGPS}
@@ -206,11 +212,11 @@ export default function Keluarga() {
           <button
             key={c.n}
             onClick={() => {
-              api.setSettings({ lat: c.lat, lng: c.lng, label: c.n });
+              patch({ lat: c.lat, lng: c.lng, label: c.n });
               setMsg(`Lokasi: ${c.n}`);
             }}
             className={`border px-2 py-2 text-xs transition ${
-              store.settings.label === c.n
+              settings.label === c.n
                 ? "border-[#1c1a15] font-semibold dark:border-[#ece7db]"
                 : "border-[#e3d9c4] text-[#4a463d] hover:border-[#1c1a15] dark:border-[#263027] dark:text-[#b9bfae]"
             }`}
@@ -229,7 +235,7 @@ export default function Keluarga() {
             setMsg("Latitude/longitude tidak valid.");
             return;
           }
-          api.setSettings({ lat: la, lng: ln, label: label.trim() || "Manual" });
+          patch({ lat: la, lng: ln, label: label.trim() || "Manual" });
           setMsg("Lokasi manual disimpan.");
         }}
       >
@@ -262,16 +268,6 @@ export default function Keluarga() {
         </div>
       </form>
       {msg && <p className="mt-2 border-l-2 border-[#1d3b2e] pl-2 text-xs dark:border-[#8fb69f]">{msg}</p>}
-
-      <h2 className="kicker mt-8 text-[#9b2c1f]">Zona berbahaya</h2>
-      <button
-        onClick={() => {
-          if (confirm("Hapus SEMUA profil dan catatan di perangkat ini?")) api.resetAll();
-        }}
-        className="mt-2 w-full border border-[#9b2c1f]/40 px-3 py-2.5 text-sm text-[#9b2c1f] transition hover:bg-[#9b2c1f] hover:text-white"
-      >
-        Hapus semua data profil
-      </button>
     </main>
   );
 }

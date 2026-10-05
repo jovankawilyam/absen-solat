@@ -8,7 +8,7 @@ const ITEMS = [
   { href: "/", label: "Hari ini", Icon: IcoHariIni },
   { href: "/riwayat", label: "Riwayat", Icon: IcoRiwayat },
   { href: "/statistik", label: "Statistik", Icon: IcoStatistik },
-  { href: "/keluarga", label: "Keluarga", Icon: IcoKeluarga },
+  { href: "/keluarga", label: "Profil", Icon: IcoKeluarga },
 ];
 
 export default function BottomNav() {

@@ -3,8 +3,8 @@ import "./globals.css";
 import BottomNav from "@/components/BottomNav";
 
 export const metadata: Metadata = {
-  title: "Catatan Solat — Absen Foto Keluarga",
-  description: "Catatan solat 5 waktu dengan foto kamera langsung + timestamp. Data tersimpan di perangkat.",
+  title: "Catatan Solat — Absen Foto",
+  description: "Catatan solat 5 waktu dengan foto kamera langsung + timestamp. Masuk dengan Google, data tersimpan di cloud.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

@@ -5,17 +5,22 @@ import { IcoKamera } from "./icons";
 
 export default function PhotoThumb({
   blob,
+  src,
   alt,
   onClick,
 }: {
-  blob: Blob;
+  blob?: Blob;
+  src?: string;
   alt: string;
   onClick?: () => void;
 }) {
-  const url = useMemo(() => URL.createObjectURL(blob), [blob]);
+  const blobUrl = useMemo(() => (blob ? URL.createObjectURL(blob) : null), [blob]);
+  const url = src ?? blobUrl;
   const [imgOk, setImgOk] = useState(true);
-  useEffect(() => () => URL.revokeObjectURL(url), [url]);
-  if (!imgOk)
+  useEffect(() => () => {
+    if (blobUrl) URL.revokeObjectURL(blobUrl);
+  }, [blobUrl]);
+  if (!url || !imgOk)
     return (
       <span className="flex h-12 w-12 items-center justify-center border border-[#e3d9c4] text-[#a39c8b]">
         <IcoKamera className="h-5 w-5" />
